@@ -65,7 +65,7 @@ const DEFAULT_TEMPLATES = [
   [2, 3, '',
     'Hi {{First Name}}, quick follow-up.\n\n' +
     'Having worked on the in-house side, I know many venues allow outside AV, and it\'s often less expensive for the same (or better) production. Happy to put together a side-by-side quote for your next event so you can compare. No obligation.\n\n' +
-    'For reference, our biggest recent show was the Badass Business Summit, and before starting Magix I also worked for the Texas Rangers.\n\n' +
+    'For reference, before starting Magix I was the AV Coordinator for the Texas Rangers, overseeing AV for everything on the field and around the stadium grounds, from Jonas Brothers and P!nk concerts to corporate events in the conference rooms. Our biggest show since starting Magix was the Badass Business Summit.\n\n' +
     'Worth a look?'],
   [3, 6, '',
     'Hi {{First Name}}, I\'ll stop filling your inbox after this one.\n\n' +

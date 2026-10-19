@@ -27,17 +27,23 @@ const TEMPLATE_HEADERS = ['Step', 'Wait Days', 'Subject', 'Body', 'Campaign'];
 // Leads and template rows with a blank Campaign belong to this one.
 const DEFAULT_CAMPAIGN = 'Planners';
 
-// Apollo's CSV column names (first match wins) for each Leads column.
+// CSV column names (first match wins) for each Leads column. Covers Apollo
+// exports and association directory lists.
 const APOLLO_COLUMNS = {
   'First Name': ['First Name'],
   'Last Name': ['Last Name'],
   'Email': ['Email', 'Work Email', 'Email Address'],
   'Title': ['Title', 'Job Title'],
-  'Company': ['Company Name for Emails', 'Company', 'Company Name'],
+  'Company': ['Company Name for Emails', 'Company', 'Company Name', 'CompanyName', 'Organization'],
   'City': ['City'],
   'Website': ['Website', 'Company Website'],
   'LinkedIn': ['Person Linkedin Url', 'LinkedIn Url', 'Linkedin Url', 'LinkedIn'],
 };
+
+// Used when a list has one name column ("Wendy Hamilton") instead of First/Last.
+const FULL_NAME_COLUMNS = ['Contact', 'Full Name', 'Name', 'Contact Name'];
+const NAME_PREFIXES = /^(dr|mr|mrs|ms|miss|rev|hon|prof)\.?$/i;
+const NAME_SUFFIXES = /^(jr|sr|ii|iii|iv|cae|cmp|phd|md|esq|cpa)\.?$/i;
 
 const DEFAULT_SETTINGS = [
   ['Setting', 'Value', 'What it does'],
@@ -84,7 +90,7 @@ const DEFAULT_TEMPLATES = [
 const ASSOCIATION_TEMPLATES = [
   [1, 0, 'AV for {{Company|your}} conference and gala',
     'Hi {{First Name}},\n\n' +
-    'I\'m Payton, owner of Magix Production here in DFW. I was the AV Coordinator for the Texas Rangers, worked hotel AV at the Gaylord Texan, the Omni and the Adolphus, and have produced meetings for the National Speakers Association\'s North Texas chapter.\n\n' +
+    'I\'m Payton, owner of Magix Production. We\'re based in DFW and produce events across Texas. I was the AV Coordinator for the Texas Rangers, worked hotel AV at the Gaylord Texan, the Omni and the Adolphus, and have produced meetings for the National Speakers Association\'s North Texas chapter.\n\n' +
     'We handle the full show for annual conferences and awards galas: sound, lighting, staging, LED walls, video, and livestreaming so members who can\'t make it in person can still watch live.\n\n' +
     'Is the AV for {{Company|your}} next conference or gala already locked in, or would a second quote be useful?',
     'Associations'],
@@ -197,8 +203,10 @@ function importFromApollo() {
     srcIndex[target] = name ? srcHeaders.indexOf(name.toLowerCase()) : -1;
   });
   const statusIdx = srcHeaders.indexOf('email status');
-  if (srcIndex['Email'] === -1 || srcIndex['First Name'] === -1) {
-    ui.alert('The Apollo tab needs "First Name" and "Email" columns. Did the CSV import correctly?');
+  const fullName = FULL_NAME_COLUMNS.find(n => srcHeaders.indexOf(n.toLowerCase()) !== -1);
+  const fullNameIdx = fullName ? srcHeaders.indexOf(fullName.toLowerCase()) : -1;
+  if (srcIndex['Email'] === -1 || (srcIndex['First Name'] === -1 && fullNameIdx === -1)) {
+    ui.alert('The import tab needs an "Email" column and either "First Name" or "Contact". Did the CSV import correctly?');
     return;
   }
 
@@ -223,7 +231,10 @@ function importFromApollo() {
 
   values.slice(1).forEach(row => {
     const email = String(row[srcIndex['Email']]).trim();
-    const first = String(row[srcIndex['First Name']]).trim();
+    const name = srcIndex['First Name'] !== -1
+      ? { first: String(row[srcIndex['First Name']]).trim(), last: srcIndex['Last Name'] !== -1 ? String(row[srcIndex['Last Name']]).trim() : '' }
+      : splitName_(row[fullNameIdx]);
+    const first = name.first;
     if (!email || email.indexOf('@') === -1 || !first) { skippedNoEmail++; return; }
     if (onlyVerified && statusIdx !== -1) {
       const status = String(row[statusIdx]).toLowerCase();
@@ -236,6 +247,8 @@ function importFromApollo() {
     Object.keys(srcIndex).forEach(target => {
       if (srcIndex[target] !== -1) out[leads.col[target]] = String(row[srcIndex[target]]).trim();
     });
+    out[leads.col['First Name']] = name.first;
+    out[leads.col['Last Name']] = name.last;
     out[leads.col['Status']] = 'new';
     out[leads.col['Campaign']] = campaign;
     toAdd.push(out);
@@ -611,6 +624,14 @@ function buildBody_(ctx, template, lead) {
   const optOut = String(ctx.settings['Opt-out Line'] || '').trim();
   if (optOut) parts.push(optOut);
   return parts.filter(String).join('\n\n');
+}
+
+/** "Dr. Edwin Griffin, Jr., CAE" → { first: 'Edwin', last: 'Griffin' } */
+function splitName_(full) {
+  const words = String(full || '').split(',')[0].trim().split(/\s+/).filter(Boolean);
+  while (words.length && NAME_PREFIXES.test(words[0])) words.shift();
+  while (words.length > 1 && NAME_SUFFIXES.test(words[words.length - 1])) words.pop();
+  return { first: words[0] || '', last: words.length > 1 ? words[words.length - 1] : '' };
 }
 
 /** Replaces {{Column Name}} or {{Column Name|fallback}} with the lead's value. */

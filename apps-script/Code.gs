@@ -19,8 +19,13 @@ const TAB_TEMPLATES = 'Templates';
 
 const LEAD_HEADERS = [
   'First Name', 'Last Name', 'Email', 'Title', 'Company', 'City', 'Website',
-  'LinkedIn', 'Status', 'Step', 'Last Sent', 'Notes', 'Thread ID',
+  'LinkedIn', 'Status', 'Step', 'Last Sent', 'Notes', 'Thread ID', 'Campaign',
 ];
+
+const TEMPLATE_HEADERS = ['Step', 'Wait Days', 'Subject', 'Body', 'Campaign'];
+
+// Leads and template rows with a blank Campaign belong to this one.
+const DEFAULT_CAMPAIGN = 'Planners';
 
 // Apollo's CSV column names (first match wins) for each Leads column.
 const APOLLO_COLUMNS = {
@@ -56,20 +61,43 @@ const DEFAULT_SETTINGS = [
 ];
 
 const DEFAULT_TEMPLATES = [
-  ['Step', 'Wait Days', 'Subject', 'Body'],
+  TEMPLATE_HEADERS,
   [1, 0, 'AV for {{Company|your}} events',
     'Hi {{First Name}},\n\n' +
     'I\'m Payton, owner of Magix Production here in DFW. Before starting my company, I worked hotel AV with Encore at the Gaylord Texan, the Omni, the Adolphus and the Crescent Court.\n\n' +
     'Now my team handles sound, lighting, staging, LED walls and projection, video production and livestreaming for corporate events, galas and conferences. Same big-hotel standards, without the big-hotel pricing.\n\n' +
-    'Do you have anything coming up in the next few months where a second AV quote would be useful?'],
+    'Do you have anything coming up in the next few months where a second AV quote would be useful?',
+    'Planners'],
   [2, 3, '',
     'Hi {{First Name}}, quick follow-up.\n\n' +
     'Having worked on the in-house side, I know many venues allow outside AV, and it\'s often less expensive for the same (or better) production. Happy to put together a side-by-side quote for your next event so you can compare. No obligation.\n\n' +
     'For reference, before starting Magix I was the AV Coordinator for the Texas Rangers, overseeing AV for everything on the field and around the stadium grounds, from Jonas Brothers and P!nk concerts to corporate events in the conference rooms. Our biggest show since starting Magix was the Badass Business Summit.\n\n' +
-    'Worth a look?'],
+    'Worth a look?',
+    'Planners'],
   [3, 6, '',
     'Hi {{First Name}}, I\'ll stop filling your inbox after this one.\n\n' +
-    'If you ever need an AV partner in DFW, or a backup when your usual vendor is booked, just reply here and I\'ll get you a detailed quote within 3 days.'],
+    'If you ever need an AV partner in DFW, or a backup when your usual vendor is booked, just reply here and I\'ll get you a detailed quote within 3 days.',
+    'Planners'],
+];
+
+// Added to an existing Templates tab by "Set up tabs" if it has no Associations rows yet.
+const ASSOCIATION_TEMPLATES = [
+  [1, 0, 'AV for {{Company|your}} conference and gala',
+    'Hi {{First Name}},\n\n' +
+    'I\'m Payton, owner of Magix Production here in DFW. I was the AV Coordinator for the Texas Rangers, worked hotel AV at the Gaylord Texan, the Omni and the Adolphus, and have produced meetings for the National Speakers Association\'s North Texas chapter.\n\n' +
+    'We handle the full show for annual conferences and awards galas: sound, lighting, staging, LED walls, video, and livestreaming so members who can\'t make it in person can still watch live.\n\n' +
+    'Is the AV for {{Company|your}} next conference or gala already locked in, or would a second quote be useful?',
+    'Associations'],
+  [2, 3, '',
+    'Hi {{First Name}}, quick follow-up.\n\n' +
+    'For associations, livestreaming is often the easiest win: members who can\'t travel still see the keynotes and awards, sponsors get extra visibility, and the recording becomes content you can share all year. We run it alongside the in-room production with one crew, so you\'re not coordinating two vendors.\n\n' +
+    'For reference, our biggest show to date was the Badass Business Summit. Happy to put together a quote for your next conference or gala. No obligation.\n\n' +
+    'Worth a look?',
+    'Associations'],
+  [3, 6, '',
+    'Hi {{First Name}}, I\'ll stop filling your inbox after this one.\n\n' +
+    'If you\'re starting to plan next year\'s conference or awards gala, just reply here and I\'ll get you a detailed quote within 3 days.',
+    'Associations'],
 ];
 
 const UNSUBSCRIBE_RE = /\b(remove|unsubscribe|stop emailing|not interested|take me off|do not contact|don't contact)\b/i;
@@ -112,18 +140,36 @@ function setupTabs() {
     s.setFrozenRows(1);
   }
 
-  if (!ss.getSheetByName(TAB_TEMPLATES)) {
-    const t = ss.insertSheet(TAB_TEMPLATES);
-    t.getRange(1, 1, DEFAULT_TEMPLATES.length, 4).setValues(DEFAULT_TEMPLATES);
-    t.getRange('A1:D1').setFontWeight('bold');
+  let t = ss.getSheetByName(TAB_TEMPLATES);
+  if (!t) {
+    t = ss.insertSheet(TAB_TEMPLATES);
+    t.getRange(1, 1, DEFAULT_TEMPLATES.length, TEMPLATE_HEADERS.length).setValues(DEFAULT_TEMPLATES);
+    t.getRange(1, 1, 1, TEMPLATE_HEADERS.length).setFontWeight('bold');
     t.setColumnWidth(3, 220).setColumnWidth(4, 600);
-    t.getRange(1, 1, DEFAULT_TEMPLATES.length, 4).setWrap(true).setVerticalAlignment('top');
     t.setFrozenRows(1);
   }
+  // Older Templates tabs were made before campaigns existed.
+  const tHeaders = t.getRange(1, 1, 1, Math.max(t.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
+  if (tHeaders.indexOf('Campaign') === -1) {
+    t.getRange(1, tHeaders.filter(String).length + 1).setValue('Campaign').setFontWeight('bold');
+  }
+  let addedAssociations = false;
+  if (!getTemplates_()[campaignKey_('Associations')]) {
+    const col = templateColumns_(t);
+    const rows = ASSOCIATION_TEMPLATES.map(r => {
+      const out = new Array(t.getLastColumn()).fill('');
+      TEMPLATE_HEADERS.forEach((h, i) => { out[col[h]] = r[i]; });
+      return out;
+    });
+    t.getRange(t.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    addedAssociations = true;
+  }
+  t.getDataRange().setWrap(true).setVerticalAlignment('top');
 
   SpreadsheetApp.getUi().alert(
-    'Done! You now have Leads, Settings and Templates tabs.\n\n' +
-    'Next: open the Settings tab and replace [YOUR PHONE] and [YOUR MAILING ADDRESS] in the Signature.');
+    'Done! You have Leads, Settings and Templates tabs.' +
+    (addedAssociations ? '\n\nAdded the 3 Associations emails to the bottom of the Templates tab.' : '') +
+    '\n\nIf you haven\'t yet: open the Settings tab and replace [YOUR PHONE] and [YOUR MAILING ADDRESS] in the Signature.');
 }
 
 /* -------------------------------------------------------------- import --- */
@@ -156,6 +202,20 @@ function importFromApollo() {
     return;
   }
 
+  const byCampaign = getTemplates_();
+  const campaigns = Object.keys(byCampaign).map(k => byCampaign[k][0].campaign);
+  const answer = ui.prompt('Which campaign are these leads for?',
+    'Type one of: ' + campaigns.join(', ') + '\n(Leave blank for ' + DEFAULT_CAMPAIGN + '.)',
+    ui.ButtonSet.OK_CANCEL);
+  if (answer.getSelectedButton() !== ui.Button.OK) return;
+  const typed = answer.getResponseText().trim() || DEFAULT_CAMPAIGN;
+  const campaign = campaigns.find(c => campaignKey_(c) === campaignKey_(typed));
+  if (!campaign) {
+    ui.alert('There are no emails for a campaign called "' + typed + '" in the Templates tab. ' +
+      'Nothing was imported. Try again with one of: ' + campaigns.join(', '));
+    return;
+  }
+
   const leads = loadLeads_();
   const seen = new Set(leads.rows.map(r => String(r[leads.col['Email']]).trim().toLowerCase()).filter(String));
   const toAdd = [];
@@ -177,6 +237,7 @@ function importFromApollo() {
       if (srcIndex[target] !== -1) out[leads.col[target]] = String(row[srcIndex[target]]).trim();
     });
     out[leads.col['Status']] = 'new';
+    out[leads.col['Campaign']] = campaign;
     toAdd.push(out);
   });
 
@@ -184,7 +245,7 @@ function importFromApollo() {
     leads.sheet.getRange(leads.sheet.getLastRow() + 1, 1, toAdd.length, leads.headers.length).setValues(toAdd);
   }
   ui.alert(
-    'Added ' + toAdd.length + ' new lead(s) to the Leads tab.\n\n' +
+    'Added ' + toAdd.length + ' new lead(s) to the Leads tab for the ' + campaign + ' campaign.\n\n' +
     'Skipped:\n' +
     '• ' + skippedDuplicate + ' already in Leads\n' +
     '• ' + skippedUnverified + ' with an unverified email\n' +
@@ -199,17 +260,22 @@ function sendTestEmail() {
   const problems = validate_(ctx);
   if (problems.length) { ui.alert('Fix these first:\n\n• ' + problems.join('\n• ')); return; }
 
-  const firstLead = ctx.leads.rows.find(r => r[ctx.leads.col['Email']]);
-  const lead = firstLead ? leadObject_(ctx.leads, firstLead)
-    : { 'First Name': 'Jamie', 'Company': 'Sample Events Co' };
-
-  ctx.templates.forEach((t, i) => {
-    const subject = '[TEST ' + (i + 1) + '/' + ctx.templates.length + '] ' +
-      (fill_(t.subject, lead) || 'Re: ' + fill_(ctx.templates[0].subject, lead));
-    sendRaw_({ to: ctx.me, subject: subject, body: buildBody_(ctx, t, lead), fromName: ctx.settings['From Name'], me: ctx.me });
+  let count = 0;
+  Object.keys(ctx.templates).forEach(key => {
+    const steps = ctx.templates[key];
+    const campaign = steps[0].campaign;
+    // Preview with a real lead from this campaign when there is one.
+    const firstLead = ctx.leads.rows.find(r => r[ctx.leads.col['Email']] && campaignKey_(r[ctx.leads.col['Campaign']]) === key);
+    const lead = firstLead ? leadObject_(ctx.leads, firstLead)
+      : { 'First Name': 'Jamie', 'Company': 'Sample Organization' };
+    steps.forEach((t, i) => {
+      const subject = '[TEST ' + campaign + ' ' + (i + 1) + '/' + steps.length + '] ' +
+        (fill_(t.subject, lead) || 'Re: ' + fill_(steps[0].subject, lead));
+      sendRaw_({ to: ctx.me, subject: subject, body: buildBody_(ctx, t, lead), fromName: ctx.settings['From Name'], me: ctx.me });
+      count++;
+    });
   });
-  ui.alert('Sent ' + ctx.templates.length + ' test email(s) to ' + ctx.me +
-    ' using ' + (lead['First Name'] || 'sample') + '\'s details. Check your inbox!');
+  ui.alert('Sent ' + count + ' test email(s) to ' + ctx.me + ', one set per campaign. Check your inbox!');
 }
 
 /* ---------------------------------------------------------- automation --- */
@@ -378,10 +444,10 @@ function buildQueue_(ctx, now) {
     const email = String(row[leads.col['Email']]).trim();
     if (!email || !String(row[leads.col['First Name']]).trim()) return;
     if (status === '' || status === 'new') {
-      fresh.push({ index: i, step: 1 });
+      if (templatesFor_(ctx, row).length) fresh.push({ index: i, step: 1 });
     } else if (status === 'sent') {
       const step = Number(row[leads.col['Step']]) || 0;
-      const next = ctx.templates[step]; // templates[step] is step+1
+      const next = templatesFor_(ctx, row)[step]; // index `step` holds step+1
       const lastSent = row[leads.col['Last Sent']];
       if (!next || !(lastSent instanceof Date) || !row[leads.col['Thread ID']]) return;
       if (today - dayNumber_(lastSent, ctx.tz) >= next.wait) followUps.push({ index: i, step: step + 1 });
@@ -394,7 +460,8 @@ function sendStep_(ctx, index, stepNumber) {
   const leads = ctx.leads;
   const row = leads.rows[index];
   const lead = leadObject_(leads, row);
-  const template = ctx.templates[stepNumber - 1];
+  const steps = templatesFor_(ctx, row);
+  const template = steps[stepNumber - 1];
   const body = buildBody_(ctx, template, lead);
   const msg = { to: lead['Email'], body: body, fromName: ctx.settings['From Name'], me: ctx.me };
 
@@ -413,7 +480,7 @@ function sendStep_(ctx, index, stepNumber) {
   }
 
   const result = sendRaw_(msg);
-  const isLast = stepNumber >= ctx.templates.length;
+  const isLast = stepNumber >= steps.length;
   setCell_(leads, index, 'Thread ID', result.threadId);
   setCell_(leads, index, 'Step', stepNumber);
   setCell_(leads, index, 'Last Sent', new Date());
@@ -456,8 +523,12 @@ function validate_(ctx) {
   }
   const sig = String(ctx.settings['Signature'] || '');
   if (/\[[A-Z ]+\]/.test(sig)) problems.push('Replace the [BRACKETS] in Settings → Signature with your real info.');
-  if (!ctx.templates.length) problems.push('The Templates tab has no emails in it.');
-  else if (!ctx.templates[0].subject) problems.push('Email step 1 in the Templates tab needs a Subject.');
+  const keys = Object.keys(ctx.templates);
+  if (!keys.length) problems.push('The Templates tab has no emails in it.');
+  keys.forEach(key => {
+    const first = ctx.templates[key][0];
+    if (!first.subject) problems.push('Email step 1 for ' + first.campaign + ' in the Templates tab needs a Subject.');
+  });
   return problems;
 }
 
@@ -469,13 +540,46 @@ function getSettings_() {
   return out;
 }
 
+/** Returns { campaignKey: [step 1, step 2, …] } from the Templates tab. */
 function getTemplates_() {
   const sheet = SpreadsheetApp.getActive().getSheetByName(TAB_TEMPLATES);
   if (!sheet) throw new Error('Missing Templates tab. Run Outreach → 1. Set up tabs.');
-  return sheet.getDataRange().getValues().slice(1)
-    .filter(r => String(r[3]).trim())
-    .map(r => ({ step: Number(r[0]), wait: Number(r[1]) || 0, subject: String(r[2]).trim(), body: String(r[3]) }))
-    .sort((a, b) => a.step - b.step);
+  const col = templateColumns_(sheet);
+  const out = {};
+  sheet.getDataRange().getValues().slice(1).forEach(r => {
+    if (!String(r[col['Body']]).trim()) return;
+    const campaign = (col['Campaign'] !== undefined && String(r[col['Campaign']]).trim()) || DEFAULT_CAMPAIGN;
+    const key = campaignKey_(campaign);
+    (out[key] = out[key] || []).push({
+      campaign: campaign,
+      step: Number(r[col['Step']]),
+      wait: Number(r[col['Wait Days']]) || 0,
+      subject: String(r[col['Subject']]).trim(),
+      body: String(r[col['Body']]),
+    });
+  });
+  Object.keys(out).forEach(k => out[k].sort((a, b) => a.step - b.step));
+  return out;
+}
+
+/** Column positions in the Templates tab, by header name. */
+function templateColumns_(sheet) {
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
+  const col = {};
+  TEMPLATE_HEADERS.forEach((h, i) => {
+    const at = headers.indexOf(h);
+    if (at !== -1) col[h] = at;
+    else if (h !== 'Campaign') col[h] = i; // tabs from before headers were checked
+  });
+  return col;
+}
+
+function templatesFor_(ctx, row) {
+  return ctx.templates[campaignKey_(row[ctx.leads.col['Campaign']])] || [];
+}
+
+function campaignKey_(name) {
+  return (String(name || '').trim() || DEFAULT_CAMPAIGN).toLowerCase();
 }
 
 function loadLeads_() {
